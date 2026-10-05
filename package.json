@@ -1,0 +1,75 @@
+{
+  "name": "@corbits/meta-provider",
+  "version": "0.1.0",
+  "description": "Meta (Muse Spark) device-flow OAuth, token mapping, and a Responses adapter configured for Meta's Model API.",
+  "keywords": [
+    "corbits",
+    "inference",
+    "interchange",
+    "meta",
+    "muse",
+    "muse-spark",
+    "oauth",
+    "responses"
+  ],
+  "homepage": "https://github.com/corbitsdev/corbits-meta-provider#readme",
+  "bugs": {
+    "url": "https://github.com/corbitsdev/corbits-meta-provider/issues"
+  },
+  "license": "LGPL-2.1-only",
+  "author": "Sawyer Cutler <sawyer@dirtroad.dev>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/corbitsdev/corbits-meta-provider.git"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "bun run build",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "test": "bun test src --pass-with-no-tests",
+    "test:e2e": "bun test e2e",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test"
+  },
+  "dependencies": {
+    "arktype": "^2.2.3"
+  },
+  "devDependencies": {
+    "@corbits/oauth-core": "0.2.0",
+    "@corbits/openai-responses": "0.2.0",
+    "@intx/inference": "0.4.0",
+    "@intx/types": "0.4.0",
+    "@types/bun": "1.3.14",
+    "oxfmt": "0.70.0",
+    "oxlint": "1.85.0",
+    "typescript": "6.0.3"
+  },
+  "peerDependencies": {
+    "@corbits/oauth-core": "^0.2.0",
+    "@corbits/openai-responses": "^0.2.0",
+    "@intx/inference": "^0.4.0",
+    "@intx/types": "^0.4.0"
+  },
+  "engines": {
+    "bun": ">=1.2.0",
+    "node": ">=24"
+  }
+}

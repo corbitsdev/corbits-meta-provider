@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tsbuildinfo
+*.tgz
+coverage/
+.env
+.env.*
+.DS_Store
+# Planning artifacts (spec docs) are not part of the package; oxfmt skips them.
+.corbits/
+PRD.md
+BUILD_PLAN.md
