@@ -1,6 +1,6 @@
 # @corbits/meta-provider
 
-Meta (Muse Spark) for `@intx/inference`: the RFC 8628 device flow that mints a short-lived Model API key, the token mapping for `@corbits/oauth-core`, and a Responses API adapter for Meta's Model API built on `@corbits/openai-responses`. An inference provider for Corbits and Interchange agents that also works in any host that runs `@intx/inference`.
+Meta (Muse Spark) for `@intx/inference`: the RFC 8628 device flow that mints a short-lived Model API key, the token mapping for `@corbits/oauth-core`, and a Responses API adapter for Meta's Model API built on `@corbits/openai-responses`. An inference provider for Corbits and Interchange agents — the quickstart below puts Meta in an `@intx/agent` in a few lines, and the same adapter runs in any host that runs `@intx/inference`.
 
 ## Why @corbits/meta-provider?
 
@@ -11,17 +11,28 @@ Meta (Muse Spark) for `@intx/inference`: the RFC 8628 device flow that mints a s
 ## Install
 
 ```bash
-bun add @corbits/meta-provider @corbits/oauth-core@^0.2.0 @corbits/openai-responses@^0.2.0 @intx/inference@^0.4.0 @intx/types@^0.4.0
+bun add @corbits/meta-provider @corbits/oauth-core@^0.2.0 @corbits/openai-responses@^0.2.0 @intx/inference@^0.4.0 @intx/types@^0.4.0 @intx/agent@^0.4.0 @intx/storage-isogit@^0.4.0
 ```
 
 Runs on Bun >= 1.2 or Node >= 24.
 
-## Quickstart: API key (`META_API_KEY`)
+## Quickstart: Meta in an agent
 
-Needs `META_API_KEY` set to a Meta Model API key (the Muse Code convention).
+The fastest way to try Meta is inside an `@intx/agent` — no event loop to
+wire, no adapter plumbing to think about. Needs `META_API_KEY` set to a
+Meta Model API key (the Muse Code convention).
 
 ```ts
-import { createDependencies, runInference } from "@intx/inference";
+import {
+  createAgent,
+  createDefaultDirectorRegistry,
+  createStaticCredentialResolver,
+  defineAgent,
+  type BaseEnv,
+} from "@intx/agent";
+import { noopAuditStore, permissiveAuthorize } from "@intx/agent/testing";
+import { createIsogitStore } from "@intx/storage-isogit/node";
+import { createDependencies } from "@intx/inference";
 import {
   createMetaResponsesAdapter,
   META_API_KEY_ENV,
@@ -30,44 +41,71 @@ import {
   META_PROVIDER,
 } from "@corbits/meta-provider";
 
+const contextDir = "./.agent-context"; // created on first run
+
 const apiKey = process.env[META_API_KEY_ENV];
 if (apiKey === undefined) throw new Error(`${META_API_KEY_ENV} is not set`);
 
-const deps = createDependencies({
-  has: (provider) => provider === META_PROVIDER,
-  resolve: createMetaResponsesAdapter,
+// The definition's `inference.sources` only names { provider, model }; the
+// full source objects live in the env `sources` array below.
+const source = {
+  id: "meta", // id === credentialId so the resolver can find the secret
+  provider: META_PROVIDER,
+  baseURL: META_BASE_URL,
+  credentialId: "meta",
+  model: META_DEFAULT_MODELS[0],
+};
+
+const storage = await createIsogitStore(contextDir);
+
+const def = defineAgent({
+  id: "meta-agent",
+  systemPrompt: "You are a helpful assistant.",
+  tools: [],
+  capabilities: [],
+  inference: {
+    sources: [{ provider: source.provider, model: source.model }],
+  },
 });
 
-let seq = 0;
-for await (const event of runInference({
-  deps,
-  source: {
-    id: "meta",
-    provider: META_PROVIDER,
-    baseURL: META_BASE_URL,
-    credentialId: "meta",
-    model: META_DEFAULT_MODELS[0],
-  },
-  turns: [
-    {
-      role: "user",
-      timestamp: Date.now(),
-      content: [{ type: "text", text: "Say hello." }],
-    },
-  ],
-  inferenceOptions: {
-    providerOptions: { metaReasoningEffort: "low" },
-  },
-  nextSeq: () => seq++,
-  readMaterial: () => ({ secret: apiKey }),
-})) {
-  if (event.type === "inference.text.delta")
-    process.stdout.write(event.data.token);
-  if (event.type === "inference.error")
-    throw new Error(event.data.error.message);
+const env: BaseEnv = {
+  sources: [source],
+  defaultSource: source.id,
+  storage,
+  workdir: contextDir,
+  audit: noopAuditStore(),
+  authorize: permissiveAuthorize(),
+  directors: createDefaultDirectorRegistry(),
+  readCurrentMaterial: createStaticCredentialResolver({
+    [source.credentialId]: apiKey,
+  }),
+  // The built-in adapter registry ships anthropic / google / openai, not
+  // meta — register the Meta adapter explicitly.
+  deps: createDependencies({
+    has: (provider) => provider === META_PROVIDER,
+    resolve: createMetaResponsesAdapter,
+  }),
+};
+
+const agent = await createAgent(def, env);
+try {
+  const result = await agent.send("Say hello.");
+  if (result.type !== "reply")
+    throw new Error(`suspended on ${result.correlationId}`);
+  console.log(result.reply);
+} finally {
+  await agent.close();
 }
-process.stdout.write("\n");
 ```
+
+`agent.send` returns a union: `{ type: "reply", reply }` on success, or
+`{ type: "suspended", correlationId }` when the agent parks on a gate (an
+approval or a pending tool). Anything other than `reply` means the agent
+suspended and needs an inbound message carrying that `correlationId` to
+resume. Re-running the same script against `contextDir` resumes the
+conversation instead of starting fresh. `noopAuditStore` and
+`permissiveAuthorize` are testing stubs — a product wires a real audit
+store and `authorize` built on `@intx/authz`.
 
 ## Quickstart: device login → mint → inference
 
@@ -150,6 +188,62 @@ process.stdout.write("\n");
 
 If `metaDeviceLogin` rejects with `META_DEVICE_FLOW_CANCEL_MESSAGE`
 (`"Login cancelled"`), the user aborted; show it as a cancelled login.
+
+## Advanced: raw runInference (non-agent hosts)
+
+Prefer the [agent quickstart](#quickstart-meta-in-an-agent) when you run
+inside an `@intx/agent`. Hosts that drive `@intx/inference` directly can
+call `runInference` with the `meta` source and let the adapter do the
+rest. Needs `META_API_KEY` set to a Meta Model API key.
+
+```ts
+import { createDependencies, runInference } from "@intx/inference";
+import {
+  createMetaResponsesAdapter,
+  META_API_KEY_ENV,
+  META_BASE_URL,
+  META_DEFAULT_MODELS,
+  META_PROVIDER,
+} from "@corbits/meta-provider";
+
+const apiKey = process.env[META_API_KEY_ENV];
+if (apiKey === undefined) throw new Error(`${META_API_KEY_ENV} is not set`);
+
+const deps = createDependencies({
+  has: (provider) => provider === META_PROVIDER,
+  resolve: createMetaResponsesAdapter,
+});
+
+let seq = 0;
+for await (const event of runInference({
+  deps,
+  source: {
+    id: "meta",
+    provider: META_PROVIDER,
+    baseURL: META_BASE_URL,
+    credentialId: "meta",
+    model: META_DEFAULT_MODELS[0],
+  },
+  turns: [
+    {
+      role: "user",
+      timestamp: Date.now(),
+      content: [{ type: "text", text: "Say hello." }],
+    },
+  ],
+  inferenceOptions: {
+    providerOptions: { metaReasoningEffort: "low" },
+  },
+  nextSeq: () => seq++,
+  readMaterial: () => ({ secret: apiKey }),
+})) {
+  if (event.type === "inference.text.delta")
+    process.stdout.write(event.data.token);
+  if (event.type === "inference.error")
+    throw new Error(event.data.error.message);
+}
+process.stdout.write("\n");
+```
 
 ## Where it fits
 
@@ -244,12 +338,12 @@ The endpoint / client-id constants behind the device flow
 
 ## Env vars
 
-| Var                      | Used by                                                               |
-| ------------------------ | --------------------------------------------------------------------- |
-| `META_API_KEY`           | The plain API-key quickstart; the host reads it as the bearer secret. |
-| `META_LIVE_API_KEY`      | Opt-in live e2e suite (plain key).                                    |
-| `META_LIVE_ACCESS_TOKEN` | Opt-in live e2e suite (identity token to mint from).                  |
-| `META_LIVE_MODEL`        | Optional live-model override (default: `muse-spark-1.3`).             |
+| Var                      | Used by                                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------------------- |
+| `META_API_KEY`           | The agent quickstart and the raw `runInference` quickstart read it as the bearer secret. |
+| `META_LIVE_API_KEY`      | Opt-in live e2e suite (plain key).                                                       |
+| `META_LIVE_ACCESS_TOKEN` | Opt-in live e2e suite (identity token to mint from).                                     |
+| `META_LIVE_MODEL`        | Optional live-model override (default: `muse-spark-1.3`).                                |
 
 ## Live e2e
 
