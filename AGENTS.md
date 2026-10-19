@@ -39,3 +39,9 @@ bun install && bun run check
 To work against an unpushed local checkout of `@corbits/oauth-core` or
 `@corbits/openai-responses`, `bun link` it here; never commit a lockfile
 written against the link.
+
+## Conventions
+
+- Read `README.md` before changing public behavior.
+- Keep changes focused; update docs and tests alongside code changes.
+- Run `bun run check` before declaring work complete.
