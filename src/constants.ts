@@ -27,6 +27,7 @@ export const META_API_KEY_LIFETIME_MS = 24 * 60 * 60 * 1000;
 // Order matches an authenticated GET /v1/models from Muse Code; the first
 // entry is the host default.
 export const META_DEFAULT_MODELS = [
+  "muse-wonder-1.0",
   "muse-spark-1.3",
   "muse-spark-1.2",
   "muse-spark-1.1",
